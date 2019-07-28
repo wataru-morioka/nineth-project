@@ -15,10 +15,14 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path
+from serviceApp import views as serviceView
+from siteApp import views as siteView
 # import pymysql
 
 # pymysql.install_as_MySQLdb()
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/service/user', serviceView.user),
+    path('api/site/user', siteView.user),
 ]

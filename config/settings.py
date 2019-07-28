@@ -25,8 +25,7 @@ SECRET_KEY = '4p+3n)bzk)y308jo!6jiv2t1-e)un5_l4dp3=teu*(l+7*ps=l'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
-ALLOWED_HOSTS = []
-
+ALLOWED_HOSTS = ['django.service']
 
 # Application definition
 
@@ -102,7 +101,7 @@ DATABASES = {
     }, 
 }
 
-DATABASE_ROUTERS = ['config.db_router.DBRouter']
+DATABASE_ROUTERS = ['config.db_router.DbRouter']
 
 # Password validation
 # https://docs.djangoproject.com/en/2.2/ref/settings/#auth-password-validators
