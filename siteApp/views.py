@@ -16,7 +16,7 @@ def user(request):
         user = User.objects.filter(id=1).first()
         # serializer = UserSerializer(User, many=True)
         serializer = UserSerializer(user)
-        return JsonResponse(serializer.data, safe=False)
+        return JsonResponse(serializer.data, safe=False, json_dumps_params={'indent': 4})
 
     # elif request.method == 'POST':
     #     data = JSONParser().parse(request)
