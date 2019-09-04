@@ -24,5 +24,6 @@ from siteApp import views as siteView
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/service/user', serviceView.user),
+    path('api/service/account', serviceView.account),
     path('api/site/user', siteView.user),
 ]
