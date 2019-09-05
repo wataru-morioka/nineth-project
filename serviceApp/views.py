@@ -10,6 +10,8 @@ from .serializer import UserSerializer, AccountSerializer
 import firebase_admin
 from firebase_admin import credentials, auth
 from datetime import datetime
+from django.db.models import Q
+from distutils.util import strtobool
 
 cred = credentials.Certificate(settings.FIREBASE_CERTIFICATE)
 firebase_admin.initialize_app(cred)
@@ -21,11 +23,18 @@ firebase_admin.initialize_app(cred)
 # router = routers.DefaultRouter()
 # router.register('user', UserViewSet)
 
+order_dict = {
+    '-1': 'created_datetime',
+    '0': 'login_count',
+    '1': 'latest_login',
+    '2': 'modified_datetime',
+}
+
 @csrf_exempt
 def user(request):
-    """
+    '''
     List all code snippets, or create a new snippet.
-    """
+    '''
     if request.method == 'GET':
         user = User.objects.filter(id=1).first()
         # serializer = UserSerializer(User, many=True)
@@ -34,9 +43,9 @@ def user(request):
 
 @csrf_exempt
 def account(request):
-    """
+    '''
     List all code snippets, or create a new snippet.
-    """
+    '''
     if request.method == 'GET':
         header = request.META.get('HTTP_AUTHORIZATION')
         if header == None:
@@ -52,15 +61,35 @@ def account(request):
             res = { 'result': False }
             return JsonResponse(res, status=400)
 
+        total_count = 0
+        account_list = []
+        search_string = request.GET.get(key='search', default='')
+        order = order_dict.get(request.GET.get(key='order', default=-1))
+        order_type = request.GET.get(key='type', default=True)
+        print(order_type)
         try:
-            account_list = Account.objects.all()
+            total_count = Account.objects.all().count()
+            if len(search_string) == 0:
+                if strtobool(order_type):
+                    account_list = Account.objects.order_by(order).reverse().all()[:100]
+                else:
+                    account_list = Account.objects.order_by(order).all()[:100]
+            else:
+                if strtobool(order_type):
+                    account_list = Account.objects.filter(
+                        Q(account__icontains=search_string) |
+                        Q(name__icontains=search_string)
+                    ).order_by(order).reverse().all()[:100]
+                else:
+                    account_list = Account.objects.filter(
+                        Q(account__icontains=search_string) |
+                        Q(name__icontains=search_string)
+                    ).order_by(order).all()[:100]
         except Exception as e:
             print(e)
             res = { 'result': False }
             return JsonResponse(res, status=400)
 
-
-        
         serializer = AccountSerializer(account_list, many=True)
         # format_list = list(map(
         #     lambda x: datetime.fromisoformat(x['latest_login']).strftime('%Y-%m-%d %H:%M:%S'),
@@ -74,6 +103,7 @@ def account(request):
             
         res = {
             'result': True,
+            'totalCount': total_count,
             'list': serializer.data
         }
         return JsonResponse(res, safe=False)
