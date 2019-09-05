@@ -184,22 +184,42 @@ def account(request):
 
         # now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         now = datetime.now()
-        uid = decoded_token.get('uid')
-        email = decoded_token.get('email')
-        already_account = Account.objects.filter(uid=uid).first()
-        if already_account == None:
-            res = { 'result': False }
-            return JsonResponse(res, status=500)
-
-        # 更新
-        already_account.latest_login = now
-        already_account.login_count += 1
-        try:
-            already_account.save()
-            res = { 'result': True }
-            return JsonResponse(res, status=201)
-        except Exception as e:
-            print(e)
-            res = { 'result': False }
-            return JsonResponse(res, status=500)
+        request_data = JSONParser().parse(request)
+        webrtc_flag = request_data.get('webrtc')
+        admin_flag = request_data.get('admin')
+        delete_flag = request_data.get('delete')
         
+        if webrtc_flag == None:
+            uid = decoded_token.get('uid')
+            email = decoded_token.get('email')
+            already_account = Account.objects.filter(uid=uid).first()
+            if already_account == None:
+                res = { 'result': False }
+                return JsonResponse(res, status=500)
+
+            already_account.latest_login = now
+            already_account.login_count += 1
+            try:
+                already_account.save()
+                res = { 'result': True }
+                return JsonResponse(res, status=201)
+            except Exception as e:
+                print(e)
+                res = { 'result': False }
+                return JsonResponse(res, status=500)
+        else:
+            uid = request_data.get('uid')
+            print(uid)
+            already_account = Account.objects.filter(uid=uid).first()
+            already_account.webrtc_flag = webrtc_flag
+            already_account.admin_flag = admin_flag
+            already_account.delete_flag = delete_flag
+            already_account.modified_datetime = now
+            try:
+                already_account.save()
+                res = { 'result': True }
+                return JsonResponse(res, status=201)
+            except Exception as e:
+                print(e)
+                res = { 'result': False }
+                return JsonResponse(res, status=500)
