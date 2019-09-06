@@ -16,13 +16,6 @@ from distutils.util import strtobool
 cred = credentials.Certificate(settings.FIREBASE_CERTIFICATE)
 firebase_admin.initialize_app(cred)
 
-# class UserViewSet(viewsets.ModelViewSet):
-#     queryset = User.objects.filter(id=1).first()
-#     serializer_class = UserSerializer
-
-# router = routers.DefaultRouter()
-# router.register('user', UserViewSet)
-
 order_dict = {
     '-1': 'created_datetime',
     '0': 'login_count',
@@ -32,9 +25,6 @@ order_dict = {
 
 @csrf_exempt
 def user(request):
-    '''
-    List all code snippets, or create a new snippet.
-    '''
     if request.method == 'GET':
         user = User.objects.filter(id=1).first()
         # serializer = UserSerializer(User, many=True)
@@ -43,9 +33,6 @@ def user(request):
 
 @csrf_exempt
 def account(request):
-    '''
-    List all code snippets, or create a new snippet.
-    '''
     if request.method == 'GET':
         header = request.META.get('HTTP_AUTHORIZATION')
         if header == None:
@@ -66,15 +53,18 @@ def account(request):
         search_string = request.GET.get(key='search', default='')
         order = order_dict.get(request.GET.get(key='order', default=-1))
         order_type = request.GET.get(key='type', default=True)
-        print(order_type)
         try:
-            total_count = Account.objects.all().count()
             if len(search_string) == 0:
+                total_count = Account.objects.all().count()
                 if strtobool(order_type):
                     account_list = Account.objects.order_by(order).reverse().all()[:100]
                 else:
                     account_list = Account.objects.order_by(order).all()[:100]
             else:
+                total_count = Account.objects.filter(
+                        Q(account__icontains=search_string) |
+                        Q(name__icontains=search_string)
+                    ).all().count()
                 if strtobool(order_type):
                     account_list = Account.objects.filter(
                         Q(account__icontains=search_string) |
@@ -104,7 +94,7 @@ def account(request):
         res = {
             'result': True,
             'totalCount': total_count,
-            'list': serializer.data
+            'accountList': serializer.data
         }
         return JsonResponse(res, safe=False)
 
