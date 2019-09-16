@@ -34,18 +34,21 @@ def user(request):
 @csrf_exempt
 def account(request):
     if request.method == 'GET':
+        res = { 'result': False }
         header = request.META.get('HTTP_AUTHORIZATION')
         if header == None:
-            res = { 'result': False }
             return JsonResponse(res, status=400)
-
         _, id_token = header.split()
         decoded_token = {}
         try:
             decoded_token = auth.verify_id_token(id_token)
         except Exception as e:
             print(e)
-            res = { 'result': False }
+            return JsonResponse(res, status=400)
+
+        uid = decoded_token.get('uid')
+        admin_account = Account.objects.filter(uid=uid, admin_flag=True).first()
+        if admin_account == None:
             return JsonResponse(res, status=400)
 
         total_count = 0
@@ -77,7 +80,6 @@ def account(request):
                     ).order_by(order).all()[:100]
         except Exception as e:
             print(e)
-            res = { 'result': False }
             return JsonResponse(res, status=400)
 
         serializer = AccountSerializer(account_list, many=True)
@@ -99,10 +101,10 @@ def account(request):
         return JsonResponse(res, safe=False)
 
     elif request.method == 'POST':
+        res = { 'result': False }
         # ヘッダのトークン検証
         header = request.META.get('HTTP_AUTHORIZATION')
         if header == None:
-            res = { 'result': False }
             return JsonResponse(res, status=400)
 
         _, id_token = header.split()
@@ -111,13 +113,16 @@ def account(request):
             decoded_token = auth.verify_id_token(id_token)
         except Exception as e:
             print(e)
-            res = { 'result': False }
             return JsonResponse(res, status=400)
 
         # now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         now = datetime.now()
         uid = decoded_token.get('uid')
         email = decoded_token.get('email')
+
+        if email == None:
+            return JsonResponse(res, status=400)
+
         already_account = Account.objects.filter(uid=uid).first()
         if already_account != None:
             # 更新
@@ -129,7 +134,6 @@ def account(request):
                 return JsonResponse(res, status=201)
             except Exception as e:
                 print(e)
-                res = { 'result': False }
                 return JsonResponse(res, status=500)
             
         request_data = JSONParser().parse(request)
@@ -152,15 +156,14 @@ def account(request):
             return JsonResponse(res, status=201)
         except Exception as e:
             print(e)
-            res = { 'result': False }
             return JsonResponse(res, status=500)
 
 
     elif request.method == 'PUT':
         # ヘッダのトークン検証
+        res = { 'result': False }
         header = request.META.get('HTTP_AUTHORIZATION')
         if header == None:
-            res = { 'result': False }
             return JsonResponse(res, status=400)
 
         _, id_token = header.split()
@@ -169,22 +172,19 @@ def account(request):
             decoded_token = auth.verify_id_token(id_token)
         except Exception as e:
             print(e)
-            res = { 'result': False }
             return JsonResponse(res, status=400)
 
         # now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         now = datetime.now()
+        uid = decoded_token.get('uid')
         request_data = JSONParser().parse(request)
         webrtc_flag = request_data.get('webrtc')
         admin_flag = request_data.get('admin')
         delete_flag = request_data.get('delete')
         
         if webrtc_flag == None:
-            uid = decoded_token.get('uid')
-            email = decoded_token.get('email')
             already_account = Account.objects.filter(uid=uid).first()
             if already_account == None:
-                res = { 'result': False }
                 return JsonResponse(res, status=500)
 
             already_account.latest_login = now
@@ -195,9 +195,12 @@ def account(request):
                 return JsonResponse(res, status=201)
             except Exception as e:
                 print(e)
-                res = { 'result': False }
                 return JsonResponse(res, status=500)
         else:
+            admin_account = Account.objects.filter(uid=uid, admin_flag=True).first()
+            if admin_account == None:
+                return JsonResponse(res, status=400)
+
             uid = request_data.get('uid')
             print(uid)
             already_account = Account.objects.filter(uid=uid).first()
@@ -211,5 +214,4 @@ def account(request):
                 return JsonResponse(res, status=201)
             except Exception as e:
                 print(e)
-                res = { 'result': False }
                 return JsonResponse(res, status=500)
