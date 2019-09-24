@@ -36,7 +36,7 @@ def account(request):
     if request.method == 'GET':
         res = { 'result': False }
         header = request.META.get('HTTP_AUTHORIZATION')
-        if header == None:
+        if header is None:
             return JsonResponse(res, status=400)
         _, id_token = header.split()
         decoded_token = {}
@@ -48,7 +48,7 @@ def account(request):
 
         uid = decoded_token.get('uid')
         admin_account = Account.objects.filter(uid=uid, admin_flag=True).first()
-        if admin_account == None:
+        if admin_account is None:
             return JsonResponse(res, status=400)
 
         total_count = 0
@@ -104,7 +104,7 @@ def account(request):
         res = { 'result': False }
         # ヘッダのトークン検証
         header = request.META.get('HTTP_AUTHORIZATION')
-        if header == None:
+        if header is None:
             return JsonResponse(res, status=400)
 
         _, id_token = header.split()
@@ -120,11 +120,11 @@ def account(request):
         uid = decoded_token.get('uid')
         email = decoded_token.get('email')
 
-        if email == None:
+        if email is None:
             return JsonResponse(res, status=400)
 
         already_account = Account.objects.filter(uid=uid).first()
-        if already_account != None:
+        if already_account is not None:
             # 更新
             already_account.latest_login = now
             already_account.login_count += 1
@@ -163,7 +163,7 @@ def account(request):
         # ヘッダのトークン検証
         res = { 'result': False }
         header = request.META.get('HTTP_AUTHORIZATION')
-        if header == None:
+        if header is None:
             return JsonResponse(res, status=400)
 
         _, id_token = header.split()
@@ -182,9 +182,9 @@ def account(request):
         admin_flag = request_data.get('admin')
         delete_flag = request_data.get('delete')
         
-        if webrtc_flag == None:
+        if webrtc_flag is None:
             already_account = Account.objects.filter(uid=uid).first()
-            if already_account == None:
+            if already_account is None:
                 return JsonResponse(res, status=500)
 
             already_account.latest_login = now
@@ -198,7 +198,7 @@ def account(request):
                 return JsonResponse(res, status=500)
         else:
             admin_account = Account.objects.filter(uid=uid, admin_flag=True).first()
-            if admin_account == None:
+            if admin_account is None:
                 return JsonResponse(res, status=400)
 
             uid = request_data.get('uid')
