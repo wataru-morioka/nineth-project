@@ -2,9 +2,10 @@ from django.shortcuts import render
 from django.conf import settings
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from rest_framework.parsers import JSONParser
+from rest_framework.parsers import JSONParser, MultiPartParser, FormParser, FileUploadParser
 import django_filters
 from rest_framework import viewsets, filters, routers
+from rest_framework.decorators import parser_classes, api_view
 from .models import User, Account
 from .serializer import UserSerializer, AccountSerializer
 import firebase_admin
@@ -12,6 +13,7 @@ from firebase_admin import credentials, auth
 from datetime import datetime
 from django.db.models import Q
 from distutils.util import strtobool
+import base64
 
 cred = credentials.Certificate(settings.FIREBASE_CERTIFICATE)
 firebase_admin.initialize_app(cred)
@@ -30,6 +32,48 @@ def user(request):
         # serializer = UserSerializer(User, many=True)
         serializer = UserSerializer(user)
         return JsonResponse(serializer.data, safe=False)
+
+@csrf_exempt
+@api_view(['PUT'])
+@parser_classes([JSONParser, MultiPartParser, FormParser, FileUploadParser])
+def registerVipAccount(request, format=None):
+    if request.method == 'PUT':
+        # ヘッダのトークン検証
+        res = { 'result': False }
+        header = request.META.get('HTTP_AUTHORIZATION')
+        if header is None:
+            return JsonResponse(res, status=400)
+
+        _, id_token = header.split()
+        decoded_token = {}
+        try:
+            decoded_token = auth.verify_id_token(id_token)
+            print(decoded_token)
+        except Exception as e:
+            print(e)
+            return JsonResponse(res, status=400)
+        
+        uid = decoded_token.get('uid')
+        already_account = Account.objects.filter(uid=uid).first()
+        if already_account is None:
+            return JsonResponse(res, status=500)
+
+        now = datetime.now()
+        state = request.data.get('state')
+        upload_file = request.data.get('file')
+        if upload_file is not None:
+            thumbnail = request.data.get('file').read()
+            already_account.thumbnail = thumbnail
+        already_account.state = state
+        already_account.modified_datetime = now
+        try:
+            already_account.save()
+            res = { 'result': True, 'thumbnail': base64.b64encode(already_account.thumbnail).decode('utf-8') }
+            # res = { 'result': True }
+            return JsonResponse(res, status=201)
+        except Exception as e:
+            print(e)
+            return JsonResponse(res, status=500)
 
 @csrf_exempt
 def account(request):
@@ -92,6 +136,7 @@ def account(request):
             item['latest_login'] = datetime.fromisoformat(item['latest_login']).strftime('%Y-%m-%d %H:%M:%S')
             item['created_datetime'] = datetime.fromisoformat(item['created_datetime']).strftime('%Y-%m-%d %H:%M:%S')
             item['modified_datetime'] = datetime.fromisoformat(item['modified_datetime']).strftime('%Y-%m-%d %H:%M:%S')
+            # item['thumbnail'] = None
             
         res = {
             'result': True,
@@ -191,7 +236,14 @@ def account(request):
             already_account.login_count += 1
             try:
                 already_account.save()
-                res = { 'result': True }
+
+                thumbnail = {}
+                if already_account.thumbnail is None:
+                    thumbnail = None
+                else:
+                    thumbnail = base64.b64encode(already_account.thumbnail).decode('utf-8')
+                res = { 'result': True, 'thumbnail': thumbnail, 'state': already_account.state }
+                
                 return JsonResponse(res, status=201)
             except Exception as e:
                 print(e)
@@ -208,6 +260,7 @@ def account(request):
             already_account.admin_flag = admin_flag
             already_account.delete_flag = delete_flag
             already_account.modified_datetime = now
+
             try:
                 already_account.save()
                 res = { 'result': True }

@@ -18,7 +18,7 @@ class Account(models.Model):
     latest_login = models.DateTimeField(db_index=True, null=False)
     created_datetime = models.DateTimeField(db_index=True, null=False)
     modified_datetime = models.DateTimeField(db_index=True, null=False)
-
+    thumbnail = models.BinaryField(null=True)
 
     class Meta:
         db_table = 'accounts'

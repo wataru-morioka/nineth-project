@@ -25,5 +25,6 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/service/user', serviceView.user),
     path('api/service/account', serviceView.account),
+    path('api/service/registerVipAccount', serviceView.registerVipAccount),
     path('api/site/user', siteView.user),
 ]
