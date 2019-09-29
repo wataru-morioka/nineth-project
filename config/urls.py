@@ -17,6 +17,8 @@ from django.contrib import admin
 from django.urls import path
 from serviceApp import views as serviceView
 from siteApp import views as siteView
+from django.conf import settings
+from django.conf.urls.static import static
 # import pymysql
 
 # pymysql.install_as_MySQLdb()
@@ -26,5 +28,9 @@ urlpatterns = [
     path('api/service/user', serviceView.user),
     path('api/service/account', serviceView.account),
     path('api/service/registerVipAccount', serviceView.registerVipAccount),
+    path('api/service/image', serviceView.image),
+    path('api/service/article', serviceView.article),
     path('api/site/user', siteView.user),
 ]
+
+urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

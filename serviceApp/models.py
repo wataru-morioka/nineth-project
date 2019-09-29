@@ -34,3 +34,28 @@ class Account(models.Model):
     #     self.created_datetime = created_datetime
     #     self.modified_datetime = modified_datetime
 
+class Article(models.Model):
+    orner = models.CharField(max_length=255, null=False, default='')
+    contributor_uid = models.CharField(max_length=255, db_index=True, null=False, default='')
+    contributor_account = models.CharField(max_length=255, db_index=True, null=False, default='')
+    body = models.TextField(db_index=True, null=False)
+    video_path = models.FilePathField(null=True)
+    video_thumbnail = models.BinaryField(db_index=True, null=True)
+    delete_flag = models.BooleanField(db_index=True, null=False, default=False)
+    created_datetime = models.DateTimeField(db_index=True, null=False)
+    modified_datetime = models.DateTimeField(db_index=True, null=False)
+
+    class Meta:
+        db_table = 'articles'
+
+class Comment(models.Model):
+    article = models.ForeignKey(Article, on_delete=models.CASCADE)
+    commentator_uid = models.CharField(max_length=255, db_index=True, null=False, default='')
+    commentator_account = models.CharField(max_length=255, db_index=True, null=False, default='')
+    body = models.TextField(db_index=True, null=False)
+    delete_flag = models.BooleanField(db_index=True, null=False, default=False)
+    created_datetime = models.DateTimeField(db_index=True, null=False)
+    modified_datetime = models.DateTimeField(db_index=True, null=False)
+
+    class Meta:
+        db_table = 'comments'

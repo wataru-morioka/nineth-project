@@ -6,14 +6,20 @@ from rest_framework.parsers import JSONParser, MultiPartParser, FormParser, File
 import django_filters
 from rest_framework import viewsets, filters, routers
 from rest_framework.decorators import parser_classes, api_view
-from .models import User, Account
-from .serializer import UserSerializer, AccountSerializer
+from .models import User, Account, Article, Comment
+from .serializer import UserSerializer, AccountSerializer, ArticleSerializer, CommentSerializer
 import firebase_admin
 from firebase_admin import credentials, auth
 from datetime import datetime
 from django.db.models import Q
 from distutils.util import strtobool
 import base64
+from django.core.files.storage import FileSystemStorage
+import traceback
+from django.db.models.sql.datastructures import Join
+from django.db.models.fields.related import ForeignObject
+from django.db.models.options import Options
+from django.db import connection
 
 cred = credentials.Certificate(settings.FIREBASE_CERTIFICATE)
 firebase_admin.initialize_app(cred)
@@ -25,6 +31,14 @@ order_dict = {
     '2': 'modified_datetime',
 }
 
+def dictfetchall(cursor):
+    "Return all rows from a cursor as a dict"
+    columns = [col[0] for col in cursor.description]
+    return [
+        dict(zip(columns, row))
+        for row in cursor.fetchall()
+    ]
+
 @csrf_exempt
 def user(request):
     if request.method == 'GET':
@@ -32,6 +46,157 @@ def user(request):
         # serializer = UserSerializer(User, many=True)
         serializer = UserSerializer(user)
         return JsonResponse(serializer.data, safe=False)
+
+@csrf_exempt
+def image(request):
+    if request.method == 'POST' and request.FILES['upload']:
+        upload_file = request.FILES['upload']
+        fs = FileSystemStorage()
+        filename = fs.save(upload_file.name, upload_file)
+        uploaded_file_url = fs.url(filename)
+        res = {
+            "url": 'https://django.service{}'.format(uploaded_file_url),
+            "uploaded": True
+        }
+        return JsonResponse(res, status=201)
+
+    res = {
+        "uploaded": False,
+        "error": {
+            "message": "Error"
+        }
+    }
+    return JsonResponse(res, status=400)
+
+@csrf_exempt
+@api_view(['GET', 'POST', 'PUT'])
+@parser_classes([JSONParser, MultiPartParser, FormParser, FileUploadParser])
+def article(request, format=None):
+    if request.method == 'GET':
+        # ヘッダのトークン検証
+        res = { 'result': False }
+        header = request.META.get('HTTP_AUTHORIZATION')
+        if header is None:
+            return JsonResponse(res, status=400)
+
+        _, id_token = header.split()
+        decoded_token = {}
+        try:
+            decoded_token = auth.verify_id_token(id_token)
+            print(decoded_token)
+        except Exception as e:
+            print(e)
+            return JsonResponse(res, status=400)
+
+        articleList = []
+        with connection.cursor() as cursor:
+            cursor.execute(
+                'select' \
+                '   a.id as id' \
+                '   ,b.name as contributor_name' \
+                '   ,a.body as body' \
+                '   ,b.thumbnail as thumbnail' \
+                '   ,a.created_datetime as created_datetime' \
+                '   ,a.modified_datetime as modified_datetime' \
+                ' from articles a left outer join accounts b on' \
+                '   a.contributor_uid = b.uid and a.delete_flag = false' \
+                ' order by a.modified_datetime desc'
+            )
+            articleList = dictfetchall(cursor)
+
+        try:
+            # serializer = ArticleSerializer(article_list, many=True)
+            for article in articleList:
+                article['created_datetime'] = article['created_datetime'].strftime('%Y-%m-%d %H:%M:%S')
+                article['modified_datetime'] = article['modified_datetime'].strftime('%Y-%m-%d %H:%M:%S')
+                article['thumbnail'] = base64.b64encode(article['thumbnail']).decode('utf-8')
+                print(article['contributor_name'])
+
+            res = {
+                'result': True,
+                'articleList': articleList,
+            }
+            
+            return JsonResponse(res, safe=False)
+        except Exception as e:
+            print(e)
+            print(traceback.format_exc())
+            return JsonResponse(res, status=500)
+
+    if request.method == 'POST':
+        # ヘッダのトークン検証
+        res = { 'result': False }
+        header = request.META.get('HTTP_AUTHORIZATION')
+        if header is None:
+            return JsonResponse(res, status=400)
+
+        _, id_token = header.split()
+        decoded_token = {}
+        try:
+            decoded_token = auth.verify_id_token(id_token)
+            print(decoded_token)
+        except Exception as e:
+            print(e)
+            return JsonResponse(res, status=400)
+        
+        uid = decoded_token.get('uid')
+        admin_account = Account.objects.filter(uid=uid, admin_flag=True).first()
+        if admin_account is None:
+            return JsonResponse(res, status=400)
+
+        now = datetime.now()
+        article = Article(
+            orner = 'jagermeister',
+            contributor_uid = uid,
+            contributor_account = decoded_token.get('email'),
+            body = request.data.get('body'),
+            created_datetime = now,
+            modified_datetime = now
+        )
+        try:
+            article.save()
+            res = { 'result': True }
+            return JsonResponse(res, status=201)
+        except Exception as e:
+            print(e)
+            return JsonResponse(res, status=500)
+    
+    if request.method == 'PUT':
+        # ヘッダのトークン検証
+        res = { 'result': False }
+        header = request.META.get('HTTP_AUTHORIZATION')
+        if header is None:
+            return JsonResponse(res, status=400)
+
+        _, id_token = header.split()
+        decoded_token = {}
+        try:
+            decoded_token = auth.verify_id_token(id_token)
+            print(decoded_token)
+        except Exception as e:
+            print(e)
+            return JsonResponse(res, status=400)
+        
+        uid = decoded_token.get('uid')
+        admin_account = Account.objects.filter(uid=uid, admin_flag=True).first()
+        if admin_account is None:
+            return JsonResponse(res, status=400)
+
+        article_id = request.data.get('articleId')
+        already_article = Article.objects.filter(id=article_id).first()
+        if already_article is None:
+            return JsonResponse(res, status=400)
+
+        now = datetime.now()
+        already_article.body = request.data.get('body')
+        already_article.modified_datetime = now
+        try:
+            already_article.save()
+            res = { 'result': True }
+            return JsonResponse(res, status=201)
+        except Exception as e:
+            print(e)
+            return JsonResponse(res, status=500)
 
 @csrf_exempt
 @api_view(['PUT'])
@@ -56,7 +221,7 @@ def registerVipAccount(request, format=None):
         uid = decoded_token.get('uid')
         already_account = Account.objects.filter(uid=uid).first()
         if already_account is None:
-            return JsonResponse(res, status=500)
+            return JsonResponse(res, status=400)
 
         now = datetime.now()
         state = request.data.get('state')
@@ -104,9 +269,9 @@ def account(request):
             if len(search_string) == 0:
                 total_count = Account.objects.all().count()
                 if strtobool(order_type):
-                    account_list = Account.objects.order_by(order).reverse().all()[:100]
+                    account_list = Account.objects.all().order_by(order).reverse()[:100]
                 else:
-                    account_list = Account.objects.order_by(order).all()[:100]
+                    account_list = Account.objects.all().order_by(order)[:100]
             else:
                 total_count = Account.objects.filter(
                         Q(account__icontains=search_string) |
@@ -171,6 +336,8 @@ def account(request):
         already_account = Account.objects.filter(uid=uid).first()
         if already_account is not None:
             # 更新
+            already_account.email = email
+            already_account.name = decoded_token.get('name')
             already_account.latest_login = now
             already_account.login_count += 1
             try:
