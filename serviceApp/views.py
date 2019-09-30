@@ -32,7 +32,6 @@ order_dict = {
 }
 
 def dictfetchall(cursor):
-    "Return all rows from a cursor as a dict"
     columns = [col[0] for col in cursor.description]
     return [
         dict(zip(columns, row))
@@ -146,9 +145,17 @@ def article(request, format=None):
                 '   ,b.thumbnail as thumbnail' \
                 '   ,a.created_datetime as created_datetime' \
                 '   ,a.modified_datetime as modified_datetime' \
+                '   ,d.name as commentator_name' \
+                '   ,d.thumbnail as commentator_thumbnail' \
+                '   ,c.body as comment_body' \
+                '   ,c.created_datetime as comment_created_datetime' \
                 ' from articles a left outer join accounts b on' \
                 '   a.contributor_uid = b.uid and a.delete_flag = false' \
-                ' order by a.created_datetime desc'
+                ' left outer join comments c on' \
+                '   a.id = c.article_id and c.delete_flag = false' \
+                ' left outer join accounts d on' \
+                '   c.commentator_uid = d.uid' \
+                ' order by a.created_datetime desc, c.created_datetime desc'
             )
             articleList = dictfetchall(cursor)
 
@@ -158,6 +165,8 @@ def article(request, format=None):
                 article['created_datetime'] = article['created_datetime'].strftime('%Y-%m-%d %H:%M:%S')
                 article['modified_datetime'] = article['modified_datetime'].strftime('%Y-%m-%d %H:%M:%S')
                 article['thumbnail'] = base64.b64encode(article['thumbnail']).decode('utf-8')
+                if article['commentator_thumbnail'] is not None:
+                    article['commentator_thumbnail'] = base64.b64encode(article['commentator_thumbnail']).decode('utf-8')
                 print(article['contributor_name'])
 
             res = {
