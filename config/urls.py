@@ -30,6 +30,7 @@ urlpatterns = [
     path('api/service/registerVipAccount', serviceView.registerVipAccount),
     path('api/service/image', serviceView.image),
     path('api/service/article', serviceView.article),
+    path('api/service/comment', serviceView.comment),
     path('api/site/user', siteView.user),
 ]
 

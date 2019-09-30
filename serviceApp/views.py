@@ -69,6 +69,54 @@ def image(request):
     return JsonResponse(res, status=400)
 
 @csrf_exempt
+@api_view(['POST'])
+@parser_classes([JSONParser, MultiPartParser, FormParser, FileUploadParser])
+def comment(request, format=None):
+    if request.method == 'POST':
+        # ヘッダのトークン検証
+        res = { 'result': False }
+        header = request.META.get('HTTP_AUTHORIZATION')
+        if header is None:
+            return JsonResponse(res, status=400)
+
+        _, id_token = header.split()
+        decoded_token = {}
+        try:
+            decoded_token = auth.verify_id_token(id_token)
+            print(decoded_token)
+        except Exception as e:
+            print(e)
+            return JsonResponse(res, status=400)
+        
+        uid = decoded_token.get('uid')
+        webrtc_account = Account.objects.filter(uid=uid, webrtc_flag=True).first()
+        if webrtc_account is None:
+            return JsonResponse(res, status=400)
+
+        article_id = request.data.get('articleId')
+        article = Article.objects.filter(id=article_id).first()
+        if article is None:
+            return JsonResponse(res, status=400)
+
+        now = datetime.now()
+        comment = Comment(
+            article = article,
+            commentator_uid = uid,
+            commentator_account = decoded_token.get('email'),
+            body = request.data.get('body'),
+            created_datetime = now,
+            modified_datetime = now
+        )
+
+        try:
+            comment.save()
+            res = { 'result': True }
+            return JsonResponse(res, status=201)
+        except Exception as e:
+            print(e)
+            return JsonResponse(res, status=500)
+
+@csrf_exempt
 @api_view(['GET', 'POST', 'PUT'])
 @parser_classes([JSONParser, MultiPartParser, FormParser, FileUploadParser])
 def article(request, format=None):
@@ -100,7 +148,7 @@ def article(request, format=None):
                 '   ,a.modified_datetime as modified_datetime' \
                 ' from articles a left outer join accounts b on' \
                 '   a.contributor_uid = b.uid and a.delete_flag = false' \
-                ' order by a.modified_datetime desc'
+                ' order by a.created_datetime desc'
             )
             articleList = dictfetchall(cursor)
 
