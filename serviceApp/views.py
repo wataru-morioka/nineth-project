@@ -396,7 +396,7 @@ def account(request):
             already_account.email = email
             already_account.name = decoded_token.get('name')
             already_account.latest_login = now
-            already_account.login_count += 1
+            # already_account.login_count += 1
             try:
                 already_account.save()
                 res = { 'result': True }
@@ -466,7 +466,13 @@ def account(request):
                     thumbnail = None
                 else:
                     thumbnail = base64.b64encode(already_account.thumbnail).decode('utf-8')
-                res = { 'result': True, 'thumbnail': thumbnail, 'state': already_account.state }
+                res = { 
+                    'result': True,
+                    'thumbnail': thumbnail,
+                    'state': already_account.state,
+                    'isVip': already_account.webrtc_flag,
+                    'isAdmin': already_account.admin_flag,
+                }
                 
                 return JsonResponse(res, status=201)
             except Exception as e:
