@@ -31,12 +31,46 @@ order_dict = {
     '2': 'modified_datetime',
 }
 
+class VerifiedResult:
+    def __init__(self, result, decoded_token):
+        self.result = result
+        self.decoded_token = decoded_token
+
 def dictfetchall(cursor):
     columns = [col[0] for col in cursor.description]
     return [
         dict(zip(columns, row))
         for row in cursor.fetchall()
     ]
+
+def verify_token(request, webrtc_flag=None, admin_flag=None):
+    # ヘッダのトークン検証
+    header = request.META.get('HTTP_AUTHORIZATION')
+    if header is None:
+        return VerifiedResult(False, None)
+
+    _, id_token = header.split()
+    decoded_token = {}
+    try:
+        decoded_token = auth.verify_id_token(id_token)
+    except Exception as e:
+        print(e)
+        return VerifiedResult(False, None)
+    
+    uid = decoded_token.get('uid')
+
+    if webrtc_flag is not None:
+        webrtc_account = Account.objects.filter(uid=uid, webrtc_flag=webrtc_flag).first()
+        if webrtc_account is None:
+            return VerifiedResult(False, None)
+
+    if admin_flag is not None:
+        admin_account = Account.objects.filter(uid=uid, admin_flag=admin_flag).first()
+        if admin_account is None:
+            return VerifiedResult(False, None)
+
+    return VerifiedResult(True, decoded_token)
+   
 
 @csrf_exempt
 def user(request):
@@ -71,26 +105,14 @@ def image(request):
 @api_view(['POST'])
 @parser_classes([JSONParser, MultiPartParser, FormParser, FileUploadParser])
 def comment(request, format=None):
+    res = { 'result': False }
     if request.method == 'POST':
-        # ヘッダのトークン検証
-        res = { 'result': False }
-        header = request.META.get('HTTP_AUTHORIZATION')
-        if header is None:
-            return JsonResponse(res, status=400)
+        verified_result = verify_token(request, webrtc_flag=True)
+        if not verified_result.result:
+            JsonResponse(res, status=400)
 
-        _, id_token = header.split()
-        decoded_token = {}
-        try:
-            decoded_token = auth.verify_id_token(id_token)
-            print(decoded_token)
-        except Exception as e:
-            print(e)
-            return JsonResponse(res, status=400)
-        
-        uid = decoded_token.get('uid')
-        webrtc_account = Account.objects.filter(uid=uid, webrtc_flag=True).first()
-        if webrtc_account is None:
-            return JsonResponse(res, status=400)
+        decoded_token = verified_result.decoded_token
+        print(decoded_token)
 
         article_id = request.data.get('articleId')
         article = Article.objects.filter(id=article_id).first()
@@ -100,7 +122,7 @@ def comment(request, format=None):
         now = datetime.now()
         comment = Comment(
             article = article,
-            commentator_uid = uid,
+            commentator_uid = decoded_token.get('uid'),
             commentator_account = decoded_token.get('email'),
             body = request.data.get('body'),
             created_datetime = now,
@@ -119,21 +141,11 @@ def comment(request, format=None):
 @api_view(['GET', 'POST', 'PUT'])
 @parser_classes([JSONParser, MultiPartParser, FormParser, FileUploadParser])
 def article(request, format=None):
+    res = { 'result': False }
     if request.method == 'GET':
-        # ヘッダのトークン検証
-        res = { 'result': False }
-        header = request.META.get('HTTP_AUTHORIZATION')
-        if header is None:
-            return JsonResponse(res, status=400)
-
-        _, id_token = header.split()
-        decoded_token = {}
-        try:
-            decoded_token = auth.verify_id_token(id_token)
-            print(decoded_token)
-        except Exception as e:
-            print(e)
-            return JsonResponse(res, status=400)
+        verified_result = verify_token(request, webrtc_flag=True)
+        if not verified_result.result:
+            JsonResponse(res, status=400)
 
         articleList = []
         with connection.cursor() as cursor:
@@ -182,29 +194,17 @@ def article(request, format=None):
 
     if request.method == 'POST':
         # ヘッダのトークン検証
-        res = { 'result': False }
-        header = request.META.get('HTTP_AUTHORIZATION')
-        if header is None:
-            return JsonResponse(res, status=400)
+        verified_result = verify_token(request, admin_flag=True)
+        if not verified_result.result:
+            JsonResponse(res, status=400)
 
-        _, id_token = header.split()
-        decoded_token = {}
-        try:
-            decoded_token = auth.verify_id_token(id_token)
-            print(decoded_token)
-        except Exception as e:
-            print(e)
-            return JsonResponse(res, status=400)
-        
-        uid = decoded_token.get('uid')
-        admin_account = Account.objects.filter(uid=uid, admin_flag=True).first()
-        if admin_account is None:
-            return JsonResponse(res, status=400)
+        decoded_token = verified_result.decoded_token
+        print(decoded_token)
 
         now = datetime.now()
         article = Article(
             orner = 'jagermeister',
-            contributor_uid = uid,
+            contributor_uid = decoded_token.get('uid'),
             contributor_account = decoded_token.get('email'),
             body = request.data.get('body'),
             created_datetime = now,
@@ -219,25 +219,12 @@ def article(request, format=None):
             return JsonResponse(res, status=500)
     
     if request.method == 'PUT':
-        # ヘッダのトークン検証
-        res = { 'result': False }
-        header = request.META.get('HTTP_AUTHORIZATION')
-        if header is None:
-            return JsonResponse(res, status=400)
+        verified_result = verify_token(request, admin_flag=True)
+        if not verified_result.result:
+            JsonResponse(res, status=400)
 
-        _, id_token = header.split()
-        decoded_token = {}
-        try:
-            decoded_token = auth.verify_id_token(id_token)
-            print(decoded_token)
-        except Exception as e:
-            print(e)
-            return JsonResponse(res, status=400)
-        
-        uid = decoded_token.get('uid')
-        admin_account = Account.objects.filter(uid=uid, admin_flag=True).first()
-        if admin_account is None:
-            return JsonResponse(res, status=400)
+        decoded_token = verified_result.decoded_token
+        print(decoded_token)
 
         article_id = request.data.get('articleId')
         already_article = Article.objects.filter(id=article_id).first()
@@ -259,21 +246,14 @@ def article(request, format=None):
 @api_view(['PUT'])
 @parser_classes([JSONParser, MultiPartParser, FormParser, FileUploadParser])
 def registerVipAccount(request, format=None):
+    res = { 'result': False }
     if request.method == 'PUT':
-        # ヘッダのトークン検証
-        res = { 'result': False }
-        header = request.META.get('HTTP_AUTHORIZATION')
-        if header is None:
-            return JsonResponse(res, status=400)
+        verified_result = verify_token(request)
+        if not verified_result.result:
+            JsonResponse(res, status=400)
 
-        _, id_token = header.split()
-        decoded_token = {}
-        try:
-            decoded_token = auth.verify_id_token(id_token)
-            print(decoded_token)
-        except Exception as e:
-            print(e)
-            return JsonResponse(res, status=400)
+        decoded_token = verified_result.decoded_token
+        print(decoded_token)
         
         uid = decoded_token.get('uid')
         already_account = Account.objects.filter(uid=uid).first()
@@ -299,23 +279,14 @@ def registerVipAccount(request, format=None):
 
 @csrf_exempt
 def account(request):
+    res = { 'result': False }
     if request.method == 'GET':
-        res = { 'result': False }
-        header = request.META.get('HTTP_AUTHORIZATION')
-        if header is None:
-            return JsonResponse(res, status=400)
-        _, id_token = header.split()
-        decoded_token = {}
-        try:
-            decoded_token = auth.verify_id_token(id_token)
-        except Exception as e:
-            print(e)
-            return JsonResponse(res, status=400)
+        verified_result = verify_token(request, admin_flag=True)
+        if not verified_result.result:
+            JsonResponse(res, status=400)
 
-        uid = decoded_token.get('uid')
-        admin_account = Account.objects.filter(uid=uid, admin_flag=True).first()
-        if admin_account is None:
-            return JsonResponse(res, status=400)
+        decoded_token = verified_result.decoded_token
+        print(decoded_token)
 
         total_count = 0
         account_list = []
@@ -368,19 +339,12 @@ def account(request):
         return JsonResponse(res, safe=False)
 
     elif request.method == 'POST':
-        res = { 'result': False }
-        # ヘッダのトークン検証
-        header = request.META.get('HTTP_AUTHORIZATION')
-        if header is None:
-            return JsonResponse(res, status=400)
+        verified_result = verify_token(request)
+        if not verified_result.result:
+            JsonResponse(res, status=400)
 
-        _, id_token = header.split()
-        decoded_token = {}
-        try:
-            decoded_token = auth.verify_id_token(id_token)
-        except Exception as e:
-            print(e)
-            return JsonResponse(res, status=400)
+        decoded_token = verified_result.decoded_token
+        print(decoded_token)
 
         # now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         now = datetime.now()
@@ -429,19 +393,12 @@ def account(request):
 
 
     elif request.method == 'PUT':
-        # ヘッダのトークン検証
-        res = { 'result': False }
-        header = request.META.get('HTTP_AUTHORIZATION')
-        if header is None:
-            return JsonResponse(res, status=400)
+        verified_result = verify_token(request)
+        if not verified_result.result:
+            JsonResponse(res, status=400)
 
-        _, id_token = header.split()
-        decoded_token = {}
-        try:
-            decoded_token = auth.verify_id_token(id_token)
-        except Exception as e:
-            print(e)
-            return JsonResponse(res, status=400)
+        decoded_token = verified_result.decoded_token
+        print(decoded_token)
 
         # now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         now = datetime.now()
