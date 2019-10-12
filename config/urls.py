@@ -16,22 +16,19 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path
 from serviceApp import views as serviceView
-from siteApp import views as siteView
+# from siteApp import views as siteView
 from django.conf import settings
 from django.conf.urls.static import static
-# import pymysql
-
-# pymysql.install_as_MySQLdb()
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('api/service/user', serviceView.user),
+    # path('admin/', admin.site.urls),
     path('api/service/account', serviceView.account),
     path('api/service/registerVipAccount', serviceView.registerVipAccount),
     path('api/service/image', serviceView.image),
     path('api/service/article', serviceView.article),
     path('api/service/comment', serviceView.comment),
-    path('api/site/user', siteView.user),
+    # path('api/site/user', siteView.user),
 ]
 
+# 動画アップロード先指定
 urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

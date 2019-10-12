@@ -11,7 +11,7 @@ import os
 import sys
 from django.core.wsgi import get_wsgi_application
 
-path = '/app/project/config' #<- ここをproject名にする。（pathがわかればいいのでdir名でもいいと思います。）
+path = '/app/project/config' 
 if path not in sys.path:
     sys.path.append(path)
 

@@ -38,20 +38,17 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    # 'django.contrib.sites',
-    # 'config',
     'serviceApp',
-    'siteApp',
+    # 'siteApp',
     'rest_framework',
     'corsheaders',
-    # 'api.apps.ApiConfig',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'corsheaders.middleware.CorsMiddleware', # 追記 (CommonMiddleware より前に)
-    'django.middleware.locale.LocaleMiddleware', # 追記 (CommonMiddleware より前に)
+    'corsheaders.middleware.CorsMiddleware', 
+    'django.middleware.locale.LocaleMiddleware', 
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -73,8 +70,8 @@ REST_FRAMEWORK = {
 ROOT_URLCONF = 'config.urls'
 
 # CORS 対応
-CORS_ALLOW_CREDENTIALS = True # 追記 (ファイル末尾)
-CORS_ORIGIN_ALLOW_ALL = True # 追記 (ファイル末尾)
+CORS_ALLOW_CREDENTIALS = True 
+CORS_ORIGIN_ALLOW_ALL = True 
 
 TEMPLATES = [
     {

@@ -1,10 +1,5 @@
 from django.db import models
-
-class User(models.Model):
-    name = models.CharField(max_length=20)
-
-    class Meta:
-        db_table = 'users'
+import traceback
 
 class Account(models.Model):
     uid = models.CharField(db_index=True, max_length=64, unique=True, null=False, default='')
@@ -34,6 +29,14 @@ class Account(models.Model):
     #     self.created_datetime = created_datetime
     #     self.modified_datetime = modified_datetime
 
+    def upsert(self):
+        try:
+            self.save()
+            return True
+        except Exception:
+            print(traceback.format_exc())
+            return False
+
 class Article(models.Model):
     orner = models.CharField(max_length=255, null=False, default='')
     contributor_uid = models.CharField(max_length=255, db_index=True, null=False, default='')
@@ -48,6 +51,14 @@ class Article(models.Model):
     class Meta:
         db_table = 'articles'
 
+    def upsert(self):
+        try:
+            self.save()
+            return True
+        except Exception:
+            print(traceback.format_exc())
+            return False
+
 class Comment(models.Model):
     article = models.ForeignKey(Article, on_delete=models.CASCADE)
     commentator_uid = models.CharField(max_length=255, db_index=True, null=False, default='')
@@ -59,3 +70,12 @@ class Comment(models.Model):
 
     class Meta:
         db_table = 'comments'
+
+    def insert(self):
+        try:
+            self.save()
+            return True
+        except Exception:
+            print(traceback.format_exc())
+            return False
+

@@ -6,10 +6,10 @@ from rest_framework.parsers import JSONParser, MultiPartParser, FormParser, File
 import django_filters
 from rest_framework import viewsets, filters, routers
 from rest_framework.decorators import parser_classes, api_view
-from .models import User, Account, Article, Comment
-from .serializer import UserSerializer, AccountSerializer, ArticleSerializer, CommentSerializer
-import firebase_admin
-from firebase_admin import credentials, auth
+from .models import Account, Article, Comment
+from .serializer import AccountSerializer, ArticleSerializer, CommentSerializer
+# import firebase_admin
+# from firebase_admin import credentials, auth
 from datetime import datetime
 from django.db.models import Q
 from distutils.util import strtobool
@@ -20,72 +20,32 @@ from django.db.models.sql.datastructures import Join
 from django.db.models.fields.related import ForeignObject
 from django.db.models.options import Options
 from django.db import connection
+from .utils import initialize_firebase, verify_token, dictfetchall, order_dict, \
+                    get_latest_articles, get_additional_articles
 
-cred = credentials.Certificate(settings.FIREBASE_CERTIFICATE)
-firebase_admin.initialize_app(cred)
+initialize_firebase()
 
-order_dict = {
-    '-1': 'created_datetime',
-    '0': 'login_count',
-    '1': 'latest_login',
-    '2': 'modified_datetime',
-}
-
-class VerifiedResult:
-    def __init__(self, result, decoded_token):
-        self.result = result
-        self.decoded_token = decoded_token
-
-def dictfetchall(cursor):
-    columns = [col[0] for col in cursor.description]
-    return [
-        dict(zip(columns, row))
-        for row in cursor.fetchall()
-    ]
-
-def verify_token(request, webrtc_flag=None, admin_flag=None):
-    # ヘッダのトークン検証
-    header = request.META.get('HTTP_AUTHORIZATION')
-    if header is None:
-        return VerifiedResult(False, None)
-
-    _, id_token = header.split()
-    decoded_token = {}
-    try:
-        decoded_token = auth.verify_id_token(id_token)
-    except Exception as e:
-        print(e)
-        return VerifiedResult(False, None)
-    
-    uid = decoded_token.get('uid')
-
-    if webrtc_flag is not None:
-        webrtc_account = Account.objects.filter(uid=uid, webrtc_flag=webrtc_flag).first()
-        if webrtc_account is None:
-            return VerifiedResult(False, None)
-
-    if admin_flag is not None:
-        admin_account = Account.objects.filter(uid=uid, admin_flag=admin_flag).first()
-        if admin_account is None:
-            return VerifiedResult(False, None)
-
-    return VerifiedResult(True, decoded_token)
-   
-
-@csrf_exempt
-def user(request):
-    if request.method == 'GET':
-        user = User.objects.filter(id=1).first()
-        # serializer = UserSerializer(User, many=True)
-        serializer = UserSerializer(user)
-        return JsonResponse(serializer.data, safe=False)
-
+# ブログ記事の画像アップロード時（レスポンスはCKEditor.js api 仕様）
 @csrf_exempt
 def image(request):
+    res = {
+        "uploaded": False,
+        "error": {
+            "message": "Error"
+        }
+    }
     if request.method == 'POST' and request.FILES['upload']:
         upload_file = request.FILES['upload']
         fs = FileSystemStorage()
-        filename = fs.save(upload_file.name, upload_file)
+        filename = ''
+
+        try:
+            # ブログ記事画像用mediaディレクトリに保存
+            filename = fs.save(upload_file.name, upload_file)
+        except Exception:
+            print(traceback.format_exc())
+            return JsonResponse(res, status=500)
+
         uploaded_file_url = fs.url(filename)
         res = {
             "url": 'https://django.service{}'.format(uploaded_file_url),
@@ -93,23 +53,19 @@ def image(request):
         }
         return JsonResponse(res, status=201)
 
-    res = {
-        "uploaded": False,
-        "error": {
-            "message": "Error"
-        }
-    }
     return JsonResponse(res, status=400)
 
+# ブログ記事に対するコメントpost時
 @csrf_exempt
 @api_view(['POST'])
 @parser_classes([JSONParser, MultiPartParser, FormParser, FileUploadParser])
 def comment(request, format=None):
     res = { 'result': False }
     if request.method == 'POST':
+        # アカウント登録者のみOK
         verified_result = verify_token(request, webrtc_flag=True)
         if not verified_result.result:
-            JsonResponse(res, status=400)
+            return JsonResponse(res, status=400)
 
         decoded_token = verified_result.decoded_token
         print(decoded_token)
@@ -129,144 +85,64 @@ def comment(request, format=None):
             modified_datetime = now
         )
 
-        try:
-            comment.save()
+        if Comment.insert(comment):
             res = { 'result': True }
             return JsonResponse(res, status=201)
-        except Exception as e:
-            print(e)
+        else:
             return JsonResponse(res, status=500)
 
+# ブログ記事の取得、投稿、変更 api
 @csrf_exempt
 @api_view(['GET', 'POST', 'PUT'])
 @parser_classes([JSONParser, MultiPartParser, FormParser, FileUploadParser])
 def article(request, format=None):
     res = { 'result': False }
+
+    # 記事取得
     if request.method == 'GET':
-        verified_result = verify_token(request, webrtc_flag=True)
+        # firebase匿名認証（サイト閲覧者）権限以上さえあればOK
+        verified_result = verify_token(request)
         if not verified_result.result:
-            JsonResponse(res, status=400)
+            return JsonResponse(res, status=400)
 
         articleList = []
         current_article_id = request.GET.get(key='current_article_id', default='')
         additional_flag = request.GET.get(key='additional_flag', default='')
-        with connection.cursor() as cursor:
-            if current_article_id == str(0) or not strtobool(additional_flag):
-                cursor.execute(
-                    'select' \
-                    '   a.id as id' \
-                    '   ,b.name as contributor_name' \
-                    '   ,a.body as body' \
-                    '   ,b.thumbnail as thumbnail' \
-                    '   ,a.created_datetime as created_datetime' \
-                    '   ,a.modified_datetime as modified_datetime' \
-                    '   ,d.name as commentator_name' \
-                    '   ,d.thumbnail as commentator_thumbnail' \
-                    '   ,c.body as comment_body' \
-                    '   ,c.created_datetime as comment_created_datetime' \
-                    ' from'
-                    ' (' \
-                    '   select' \
-                    '       id' \
-                    '       , contributor_uid' \
-                    '       , body' \
-                    '       , created_datetime' \
-                    '       , modified_datetime' \
-                    '   from articles' \
-                    '   where' \
-                    '       delete_flag = false' \
-                    '   order by'
-                    '       created_datetime desc'
-                    '   limit 3' \
-                    ' ) a' \
-                    ' left outer join accounts b on' \
-                    '   a.contributor_uid = b.uid' \
-                    ' left outer join comments c on' \
-                    '   a.id = c.article_id' \
-                    ' left outer join accounts d on' \
-                    '   c.commentator_uid = d.uid' \
-                    ' where' \
-                    '   c.delete_flag = false or c.delete_flag is null' \
-                    ' order by' \
-                    '   a.created_datetime desc' \
-                    '   , (' \
-                    '    case when c.id is not null then' \
-                    '       c.created_datetime' \
-                    '    end' \
-                    '   ) desc'
-                )
-            else:
-                cursor.execute(
-                    'select' \
-                    '   a.id as id' \
-                    '   ,b.name as contributor_name' \
-                    '   ,a.body as body' \
-                    '   ,b.thumbnail as thumbnail' \
-                    '   ,a.created_datetime as created_datetime' \
-                    '   ,a.modified_datetime as modified_datetime' \
-                    '   ,d.name as commentator_name' \
-                    '   ,d.thumbnail as commentator_thumbnail' \
-                    '   ,c.body as comment_body' \
-                    '   ,c.created_datetime as comment_created_datetime' \
-                    ' from'
-                    ' (' \
-                    '   select' \
-                    '       id' \
-                    '       , contributor_uid' \
-                    '       , body' \
-                    '       , created_datetime' \
-                    '       , modified_datetime' \
-                    '   from articles' \
-                    '   where' \
-                    '       delete_flag = false and id < %s' \
-                    '   order by'
-                    '       created_datetime desc'
-                    '   limit 3' \
-                    ' ) a' \
-                    ' left outer join accounts b on' \
-                    '   a.contributor_uid = b.uid' \
-                    ' left outer join comments c on' \
-                    '   a.id = c.article_id' \
-                    ' left outer join accounts d on' \
-                    '   c.commentator_uid = d.uid' \
-                    ' where' \
-                    '   c.delete_flag = false or c.delete_flag is null' \
-                    ' order by' \
-                    '   a.created_datetime desc' \
-                    '   , (' \
-                    '    case when c.id is not null then' \
-                    '       c.created_datetime' \
-                    '    end' \
-                    '   ) desc'
-                    , [current_article_id]
-                )
-            articleList = dictfetchall(cursor)
 
         try:
+            with connection.cursor() as cursor:
+                if current_article_id == str(0) or not strtobool(additional_flag):
+                    # 初期記事取得時、もしくは記事、コメント更新時は、最新記事3件取得
+                    get_latest_articles(cursor)
+                else:
+                    # 画面スクロールし追加記事取得時（現在表示されている記事より古い記事3件）
+                    get_additional_articles(cursor, current_article_id)
+
+                articleList = dictfetchall(cursor)
+
             for article in articleList:
                 article['created_datetime'] = article['created_datetime'].strftime('%Y-%m-%d %H:%M:%S')
                 article['modified_datetime'] = article['modified_datetime'].strftime('%Y-%m-%d %H:%M:%S')
                 article['thumbnail'] = base64.b64encode(article['thumbnail']).decode('utf-8')
                 if article['commentator_thumbnail'] is not None:
+                    # バイナリデータはbase64エンコード
                     article['commentator_thumbnail'] = base64.b64encode(article['commentator_thumbnail']).decode('utf-8')
-                print(article['contributor_name'])
 
             res = {
                 'result': True,
                 'articleList': articleList,
             }
-            
             return JsonResponse(res, safe=False)
-        except Exception as e:
-            print(e)
+        except Exception:
             print(traceback.format_exc())
             return JsonResponse(res, status=500)
 
+    # 記事投稿
     if request.method == 'POST':
-        # ヘッダのトークン検証
+        # 管理者であればOK
         verified_result = verify_token(request, admin_flag=True)
         if not verified_result.result:
-            JsonResponse(res, status=400)
+            return JsonResponse(res, status=400)
 
         decoded_token = verified_result.decoded_token
         print(decoded_token)
@@ -280,15 +156,17 @@ def article(request, format=None):
             created_datetime = now,
             modified_datetime = now
         )
-        try:
-            article.save()
+
+        # 新規記事挿入
+        if Article.upsert(article):
             res = { 'result': True }
             return JsonResponse(res, status=201)
-        except Exception as e:
-            print(e)
+        else :
             return JsonResponse(res, status=500)
     
+    # 記事変更
     if request.method == 'PUT':
+        # 管理者であればOK
         verified_result = verify_token(request, admin_flag=True)
         if not verified_result.result:
             JsonResponse(res, status=400)
@@ -298,18 +176,20 @@ def article(request, format=None):
 
         article_id = request.data.get('articleId')
         already_article = Article.objects.filter(id=article_id).first()
+
+        # 記事データが存在するか確認
         if already_article is None:
             return JsonResponse(res, status=400)
 
         now = datetime.now()
         already_article.body = request.data.get('body')
         already_article.modified_datetime = now
-        try:
-            already_article.save()
+
+        # 記事変更
+        if Article.upsert(already_article):
             res = { 'result': True }
             return JsonResponse(res, status=201)
-        except Exception as e:
-            print(e)
+        else :
             return JsonResponse(res, status=500)
 
 @csrf_exempt
@@ -318,13 +198,15 @@ def article(request, format=None):
 def registerVipAccount(request, format=None):
     res = { 'result': False }
     if request.method == 'PUT':
+        # サイト閲覧者であるかどうか確認
         verified_result = verify_token(request)
         if not verified_result.result:
-            JsonResponse(res, status=400)
+            return JsonResponse(res, status=400)
 
         decoded_token = verified_result.decoded_token
         print(decoded_token)
         
+        # firebase google認証（ログイン）さえしていればOK
         uid = decoded_token.get('uid')
         already_account = Account.objects.filter(uid=uid).first()
         if already_account is None:
@@ -338,22 +220,28 @@ def registerVipAccount(request, format=None):
             already_account.thumbnail = thumbnail
         already_account.state = state
         already_account.modified_datetime = now
-        try:
-            already_account.save()
-            res = { 'result': True, 'thumbnail': base64.b64encode(already_account.thumbnail).decode('utf-8') }
-            # res = { 'result': True }
+
+        # account情報更新
+        if Account.upsert(already_account):
+            res = { 
+                'result': True,
+                'thumbnail': base64.b64encode(already_account.thumbnail).decode('utf-8'),
+                'state': already_account.state
+            }
             return JsonResponse(res, status=201)
-        except Exception as e:
-            print(e)
+        else :
             return JsonResponse(res, status=500)
 
 @csrf_exempt
 def account(request):
     res = { 'result': False }
+
+    # 管理画面に対してアカウント情報を取得
     if request.method == 'GET':
+        # 管理者であればOK
         verified_result = verify_token(request, admin_flag=True)
         if not verified_result.result:
-            JsonResponse(res, status=400)
+            return JsonResponse(res, status=400)
 
         decoded_token = verified_result.decoded_token
         print(decoded_token)
@@ -364,17 +252,22 @@ def account(request):
         order = order_dict.get(request.GET.get(key='order', default=-1))
         order_type = request.GET.get(key='type', default=True)
         try:
+            # 検索文字がない場合
             if len(search_string) == 0:
                 total_count = Account.objects.all().count()
+                # リストの並び順を考慮
                 if strtobool(order_type):
                     account_list = Account.objects.all().order_by(order).reverse()[:100]
                 else:
                     account_list = Account.objects.all().order_by(order)[:100]
+            # 検索文字がある場合
             else:
                 total_count = Account.objects.filter(
                         Q(account__icontains=search_string) |
                         Q(name__icontains=search_string)
                     ).all().count()
+
+                # リストの並び順を考慮
                 if strtobool(order_type):
                     account_list = Account.objects.filter(
                         Q(account__icontains=search_string) |
@@ -385,21 +278,16 @@ def account(request):
                         Q(account__icontains=search_string) |
                         Q(name__icontains=search_string)
                     ).order_by(order).all()[:100]
-        except Exception as e:
-            print(e)
+        except Exception:
+            print(traceback.format_exc())
             return JsonResponse(res, status=400)
 
         serializer = AccountSerializer(account_list, many=True)
-        # format_list = list(map(
-        #     lambda x: datetime.fromisoformat(x['latest_login']).strftime('%Y-%m-%d %H:%M:%S'),
-        #      serializer.data
-        #      ))
 
         for item in serializer.data:
             item['latest_login'] = datetime.fromisoformat(item['latest_login']).strftime('%Y-%m-%d %H:%M:%S')
             item['created_datetime'] = datetime.fromisoformat(item['created_datetime']).strftime('%Y-%m-%d %H:%M:%S')
             item['modified_datetime'] = datetime.fromisoformat(item['modified_datetime']).strftime('%Y-%m-%d %H:%M:%S')
-            # item['thumbnail'] = None
             
         res = {
             'result': True,
@@ -408,10 +296,12 @@ def account(request):
         }
         return JsonResponse(res, safe=False)
 
+    # ユーザがhome画面のLoginボタンからgoogle認証をしてきた場合
     elif request.method == 'POST':
+        # サイト閲覧者であるかどうか確認
         verified_result = verify_token(request)
         if not verified_result.result:
-            JsonResponse(res, status=400)
+            return JsonResponse(res, status=400)
 
         decoded_token = verified_result.decoded_token
         print(decoded_token)
@@ -425,18 +315,19 @@ def account(request):
             return JsonResponse(res, status=400)
 
         already_account = Account.objects.filter(uid=uid).first()
+
+        # すでに一度はgoogle認証（ログイン）していた場合
         if already_account is not None:
             # 更新
             already_account.email = email
             already_account.name = decoded_token.get('name')
             already_account.latest_login = now
             # already_account.login_count += 1
-            try:
-                already_account.save()
+
+            if Account.upsert(already_account):
                 res = { 'result': True }
                 return JsonResponse(res, status=201)
-            except Exception as e:
-                print(e)
+            else:
                 return JsonResponse(res, status=500)
             
         request_data = JSONParser().parse(request)
@@ -453,19 +344,19 @@ def account(request):
             modified_datetime = now
         )
 
-        try:
-            account.save()
+        # ユーザgoggleアカウント情報を新規登録
+        if Account.upsert(account):
             res = { 'result': True }
             return JsonResponse(res, status=201)
-        except Exception as e:
-            print(e)
+        else:
             return JsonResponse(res, status=500)
 
-
+    # アカウント情報更新時
     elif request.method == 'PUT':
+        # サイト閲覧者であるかどうか確認
         verified_result = verify_token(request)
         if not verified_result.result:
-            JsonResponse(res, status=400)
+            return JsonResponse(res, status=400)
 
         decoded_token = verified_result.decoded_token
         print(decoded_token)
@@ -478,17 +369,21 @@ def account(request):
         admin_flag = request_data.get('admin')
         delete_flag = request_data.get('delete')
         
+        # 一般サイトに訪問してきた時
         if webrtc_flag is None:
+            # googlen認証（ログイン）済みだった場合、ログインカウントを更新
             already_account = Account.objects.filter(uid=uid).first()
             if already_account is None:
                 return JsonResponse(res, status=500)
 
             already_account.latest_login = now
             already_account.login_count += 1
-            try:
-                already_account.save()
 
+            # アカウント情報更新
+            if Account.upsert(already_account):
                 thumbnail = {}
+
+                # サムネイルが登録されている（ユーザがサイトアカウント登録をした）場合、レスポンスにサムネイルを加える
                 if already_account.thumbnail is None:
                     thumbnail = None
                 else:
@@ -500,12 +395,13 @@ def account(request):
                     'isVip': already_account.webrtc_flag,
                     'isAdmin': already_account.admin_flag,
                 }
-                
                 return JsonResponse(res, status=201)
-            except Exception as e:
-                print(e)
+            else:
                 return JsonResponse(res, status=500)
+
+        # 管理画面からユーザアカウント情報を更新した時       
         else:
+            # 管理者であればOK
             admin_account = Account.objects.filter(uid=uid, admin_flag=True).first()
             if admin_account is None:
                 return JsonResponse(res, status=400)
@@ -518,10 +414,9 @@ def account(request):
             already_account.delete_flag = delete_flag
             already_account.modified_datetime = now
 
-            try:
-                already_account.save()
+            # アカウント情報更新
+            if Account.upsert(already_account):
                 res = { 'result': True }
                 return JsonResponse(res, status=201)
-            except Exception as e:
-                print(e)
+            else:
                 return JsonResponse(res, status=500)

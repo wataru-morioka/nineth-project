@@ -1,10 +1,5 @@
 from rest_framework import serializers
-from .models import User, Account, Article, Comment
-
-class UserSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = '__all__'
+from .models import Account, Article, Comment
 
 class AccountSerializer(serializers.ModelSerializer):
     class Meta:
