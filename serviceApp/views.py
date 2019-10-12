@@ -23,6 +23,7 @@ from django.db import connection
 from .utils import initialize_firebase, verify_token, dictfetchall, order_dict, \
                     get_latest_articles, get_additional_articles
 
+# firebase authentication（google認証、匿名認証）サービスを使用
 initialize_firebase()
 
 # ブログ記事の画像アップロード時（レスポンスはCKEditor.js api 仕様）
@@ -101,6 +102,10 @@ def article(request, format=None):
     # 記事取得
     if request.method == 'GET':
         # firebase匿名認証（サイト閲覧者）権限以上さえあればOK
+        print('test')
+        # print(timezone.localtime(timezone.now()))
+        print(datetime.now())
+
         verified_result = verify_token(request)
         if not verified_result.result:
             return JsonResponse(res, status=400)
@@ -127,6 +132,7 @@ def article(request, format=None):
                 if article['commentator_thumbnail'] is not None:
                     # バイナリデータはbase64エンコード
                     article['commentator_thumbnail'] = base64.b64encode(article['commentator_thumbnail']).decode('utf-8')
+                    article['comment_created_datetime'] = article['comment_created_datetime'].strftime('%Y-%m-%d %H:%M:%S')
 
             res = {
                 'result': True,
@@ -192,6 +198,7 @@ def article(request, format=None):
         else :
             return JsonResponse(res, status=500)
 
+# ユーザがログイン後アカウント登録、更新をした時
 @csrf_exempt
 @api_view(['PUT'])
 @parser_classes([JSONParser, MultiPartParser, FormParser, FileUploadParser])
@@ -232,6 +239,7 @@ def registerVipAccount(request, format=None):
         else :
             return JsonResponse(res, status=500)
 
+# アカウント情報api
 @csrf_exempt
 def account(request):
     res = { 'result': False }
