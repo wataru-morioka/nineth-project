@@ -11,7 +11,7 @@ from .serializer import AccountSerializer, ArticleSerializer, CommentSerializer
 # import firebase_admin
 # from firebase_admin import credentials, auth
 from datetime import datetime
-from django.db.models import Q
+# from django.db.models import Q
 from distutils.util import strtobool
 import base64
 from django.core.files.storage import FileSystemStorage
@@ -20,6 +20,7 @@ from django.db.models.sql.datastructures import Join
 from django.db.models.fields.related import ForeignObject
 from django.db.models.options import Options
 from django.db import connection
+from django.db.models.query import QuerySet
 from .utils import initialize_firebase, verify_token, dictfetchall, order_dict, \
                     get_latest_articles, get_additional_articles
 
@@ -36,6 +37,14 @@ def image(request):
         }
     }
     if request.method == 'POST' and request.FILES['upload']:
+        # #管理者であればOK
+        # print('test')
+        # header = request.META.get('HTTP_AUTHORIZATION')
+        # print(header)
+        # verified_result = verify_token(request, admin_flag=True)
+        # if not verified_result.result:
+        #     return JsonResponse(res, status=400)
+
         upload_file = request.FILES['upload']
         fs = FileSystemStorage()
         filename = ''
@@ -102,10 +111,6 @@ def article(request, format=None):
     # 記事取得
     if request.method == 'GET':
         # firebase匿名認証（サイト閲覧者）権限以上さえあればOK
-        print('test')
-        # print(timezone.localtime(timezone.now()))
-        print(datetime.now())
-
         verified_result = verify_token(request)
         if not verified_result.result:
             return JsonResponse(res, status=400)
@@ -254,43 +259,17 @@ def account(request):
         decoded_token = verified_result.decoded_token
         print(decoded_token)
 
-        total_count = 0
-        account_list = []
+        account_list = {}
         search_string = request.GET.get(key='search', default='')
         order = order_dict.get(request.GET.get(key='order', default=-1))
         order_type = request.GET.get(key='type', default=True)
-        try:
-            # 検索文字がない場合
-            if len(search_string) == 0:
-                total_count = Account.objects.all().count()
-                # リストの並び順を考慮
-                if strtobool(order_type):
-                    account_list = Account.objects.all().order_by(order).reverse()[:100]
-                else:
-                    account_list = Account.objects.all().order_by(order)[:100]
-            # 検索文字がある場合
-            else:
-                total_count = Account.objects.filter(
-                        Q(account__icontains=search_string) |
-                        Q(name__icontains=search_string)
-                    ).all().count()
 
-                # リストの並び順を考慮
-                if strtobool(order_type):
-                    account_list = Account.objects.filter(
-                        Q(account__icontains=search_string) |
-                        Q(name__icontains=search_string)
-                    ).order_by(order).reverse().all()[:100]
-                else:
-                    account_list = Account.objects.filter(
-                        Q(account__icontains=search_string) |
-                        Q(name__icontains=search_string)
-                    ).order_by(order).all()[:100]
-        except Exception:
-            print(traceback.format_exc())
+        # 検索対象のアカウントリストを取得
+        query_result = Account.query(account_list, search_string, order, order_type)
+        if not query_result[0]:
             return JsonResponse(res, status=400)
 
-        serializer = AccountSerializer(account_list, many=True)
+        serializer = AccountSerializer(query_result[1], many=True)
 
         for item in serializer.data:
             item['latest_login'] = datetime.fromisoformat(item['latest_login']).strftime('%Y-%m-%d %H:%M:%S')
@@ -299,7 +278,7 @@ def account(request):
             
         res = {
             'result': True,
-            'totalCount': total_count,
+            'totalCount': query_result[0],
             'accountList': serializer.data
         }
         return JsonResponse(res, safe=False)

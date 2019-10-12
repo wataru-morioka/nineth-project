@@ -1,5 +1,7 @@
 from django.db import models
 import traceback
+from distutils.util import strtobool
+from django.db.models import Q
 
 class Account(models.Model):
     uid = models.CharField(db_index=True, max_length=64, unique=True, null=False, default='')
@@ -36,6 +38,42 @@ class Account(models.Model):
         except Exception:
             print(traceback.format_exc())
             return False
+
+    @staticmethod
+    def query(account_list, search_string, order, order_type):
+        total_count = 0
+        try:
+            # 検索文字がない場合
+            if len(search_string) == 0:
+                total_count = Account.objects.all().count()
+                # リストの並び順を考慮
+                if strtobool(order_type):
+                    account_list = Account.objects.all().order_by(order).reverse()[:100]
+                else:
+                    account_list = Account.objects.all().order_by(order)[:100]
+            # 検索文字がある場合
+            else:
+                total_count = Account.objects.filter(
+                        Q(account__icontains=search_string) |
+                        Q(name__icontains=search_string)
+                    ).all().count()
+
+                # リストの並び順を考慮
+                if strtobool(order_type):
+                    account_list = Account.objects.filter(
+                        Q(account__icontains=search_string) |
+                        Q(name__icontains=search_string)
+                    ).order_by(order).reverse().all()[:100]
+                else:
+                    account_list = Account.objects.filter(
+                        Q(account__icontains=search_string) |
+                        Q(name__icontains=search_string)
+                    ).order_by(order).all()[:100]
+            return (total_count, account_list)
+        except Exception:
+            print(traceback.format_exc())
+            return (False, None)
+
 
 class Article(models.Model):
     orner = models.CharField(max_length=255, null=False, default='')
