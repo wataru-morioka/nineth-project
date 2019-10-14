@@ -16,8 +16,8 @@ class VerifiedResult:
         self.result = result
         self.decoded_token = decoded_token
 
+# ヘッダのトークン検証
 def verify_token(request, webrtc_flag=None, admin_flag=None):
-    # ヘッダのトークン検証
     header = request.META.get('HTTP_AUTHORIZATION')
     if header is None:
         return VerifiedResult(False, None)
@@ -25,18 +25,21 @@ def verify_token(request, webrtc_flag=None, admin_flag=None):
     _, id_token = header.split()
     decoded_token = {}
     try:
+        # fireabaseに認証されているか（少なくともサイト閲覧者）チェック
         decoded_token = auth.verify_id_token(id_token)
     except Exception:
         print(traceback.format_exc())
         return VerifiedResult(False, None)
     
+    # アクセスユーザに対象権限も持っているかチェック
     uid = decoded_token.get('uid')
 
+    # 管理画面からのアカウント情報修正以外の場合
     if webrtc_flag is not None:
         webrtc_account = Account.objects.filter(uid=uid, webrtc_flag=webrtc_flag).first()
         if webrtc_account is None:
             return VerifiedResult(False, None)
-
+    # 管理画面からのアカウント情報修正の場合
     if admin_flag is not None:
         admin_account = Account.objects.filter(uid=uid, admin_flag=admin_flag).first()
         if admin_account is None:
@@ -44,11 +47,13 @@ def verify_token(request, webrtc_flag=None, admin_flag=None):
 
     return VerifiedResult(True, decoded_token)
 
+# firebase 認証サービスを利用
 def initialize_firebase():
     if (not len(firebase_admin._apps)):
         cred = credentials.Certificate(settings.FIREBASE_CERTIFICATE)
         firebase_admin.initialize_app(cred)
 
+# dbから取得したデータを、カラム名をキーとした辞書データに変換
 def dictfetchall(cursor):
     columns = [col[0] for col in cursor.description]
     return [
@@ -56,6 +61,7 @@ def dictfetchall(cursor):
         for row in cursor.fetchall()
     ]
 
+# 直近の記事3件取得
 def get_latest_articles(cursor):
     cursor.execute(
                     'select' \
@@ -101,6 +107,7 @@ def get_latest_articles(cursor):
                     '   ) desc'
                 )
 
+# 現在表示されている記事より古い直近の記事3件取得
 def get_additional_articles(cursor, current_article_id):
     cursor.execute(
                     'select' \
