@@ -13,4 +13,5 @@
 - ORマッパー機能（serializers）  
 - SQLによるデータ取得機能（複雑なqueryの場合）  
 - DBマイグレーション機能  
+- ロギング（/var/log/uwsgi配下）  
 
