@@ -2,6 +2,7 @@
 ### 概要
 アカウント・記事・コメントのリクエスト受付　Restful Api（GET/POST/PUT）
 ### 機能一覧
+- アプリケーションサーバ機能（uwsgi）  
 - リクエスト受付、レスポンス機能（rest_framework）  
 - firebase認証機能利用（匿名認証、google認証）  
 - 管理者権限チェック機能  
